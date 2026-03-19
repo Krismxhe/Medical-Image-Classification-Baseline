@@ -1,0 +1,34 @@
+# EfficientNet-B3  — NAS-derived CNN, strong acc/param ratio
+data:
+  root: "/path/to/dataset"
+  img_size: 300
+  use_clahe: true
+
+model:
+  name: "efficientnet_b3"
+  pretrained: true
+  drop_rate: 0.3
+  drop_path_rate: 0.2
+
+train:
+  epochs: 100
+  batch_size: 32
+  grad_accum_steps: 2           # effective batch = 64
+  amp: true
+
+optimizer:
+  name: "adamw"
+  lr: 5.0e-5
+  weight_decay: 0.05
+
+scheduler:
+  name: "cosine"
+  warmup_epochs: 5
+
+loss:
+  name: "focal"
+  focal_gamma: 2.0
+  use_class_weights: true
+
+logging:
+  exp_name: "efficientnet_b3"

@@ -1,0 +1,77 @@
+# ════════════════════════════════════════════════════════════════════════════
+#  Base configuration — cls-baseline
+#  Override any field in a model-specific YAML under configs/examples/
+# ════════════════════════════════════════════════════════════════════════════
+
+# ── Data ─────────────────────────────────────────────────────────────────────
+data:
+  root: "/path/to/dataset"      # dataset root; must contain train/ val/ test/ or all/
+  img_size: 224
+  val_ratio: 0.15               # used when val/ is absent (carved from train/)
+  test_ratio: 0.15              # used when splitting from all/
+  mean: [0.485, 0.456, 0.406]   # ImageNet mean; override for domain-specific stats
+  std:  [0.229, 0.224, 0.225]
+  use_clahe: true               # CLAHE contrast enhancement (recommended for fundus)
+  num_workers: 8
+  pin_memory: true
+  use_weighted_sampler: true    # oversample minority classes (single-GPU only)
+
+# ── Model ─────────────────────────────────────────────────────────────────────
+model:
+  name: "resnet50"              # any timm model; run `python -c "import timm; print(timm.list_models())"` to list
+  pretrained: true              # load ImageNet weights
+  num_classes: null             # null = auto-inferred from the dataset at runtime
+  drop_rate: 0.0
+  drop_path_rate: 0.0
+  global_pool: "avg"
+  checkpoint: null              # path to a local .pth to load (optional)
+
+# ── Training ──────────────────────────────────────────────────────────────────
+train:
+  epochs: 100
+  batch_size: 32                # per GPU
+  grad_accum_steps: 1           # effective batch = batch_size × grad_accum_steps × n_gpus
+  amp: true                     # mixed precision (torch.cuda.amp)
+  clip_grad_norm: 1.0           # 0 to disable
+
+# ── Optimizer ─────────────────────────────────────────────────────────────────
+optimizer:
+  name: "adamw"                 # sgd | adam | adamw
+  lr: 1.0e-4
+  weight_decay: 0.05
+  momentum: 0.9                 # for SGD only
+
+# ── LR Scheduler ──────────────────────────────────────────────────────────────
+scheduler:
+  name: "cosine"                # cosine | step | plateau
+  warmup_epochs: 5
+  min_lr: 1.0e-6
+  step_size: 30                 # for StepLR
+  gamma: 0.1                    # for StepLR / ReduceLROnPlateau
+
+# ── Loss ──────────────────────────────────────────────────────────────────────
+loss:
+  name: "ce"                    # ce | focal | label_smoothing
+  label_smoothing: 0.1
+  use_class_weights: true       # weight loss by inverse class frequency
+  focal_gamma: 2.0              # for focal loss
+
+# ── Early Stopping ────────────────────────────────────────────────────────────
+early_stopping:
+  enabled: true
+  patience: 15
+  monitor: "auc"                # val_loss | acc | auc | f1_macro | kappa
+  mode: "max"                   # max for auc/acc/kappa/f1; min for loss
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+logging:
+  output_dir: "./outputs"
+  exp_name: "baseline"
+  use_tensorboard: true
+  use_wandb: false
+  wandb_project: "medical-cls"
+  log_interval: 10              # log every N training steps
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
+seed: 42
+resume: null                    # path to checkpoint (.pth) to resume from

@@ -1,0 +1,35 @@
+# Swin Transformer Tiny  — hierarchical ViT, good for medical imaging
+data:
+  root: "/path/to/dataset"
+  img_size: 224
+  use_clahe: true
+
+model:
+  name: "swin_tiny_patch4_window7_224"
+  pretrained: true
+  drop_rate: 0.0
+  drop_path_rate: 0.2
+
+train:
+  epochs: 100
+  batch_size: 32
+  grad_accum_steps: 2
+  amp: true
+  clip_grad_norm: 5.0
+
+optimizer:
+  name: "adamw"
+  lr: 1.0e-4
+  weight_decay: 0.05
+
+scheduler:
+  name: "cosine"
+  warmup_epochs: 20
+
+loss:
+  name: "label_smoothing"
+  label_smoothing: 0.1
+  use_class_weights: true
+
+logging:
+  exp_name: "swin_tiny"

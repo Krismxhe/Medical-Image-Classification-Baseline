@@ -1,0 +1,36 @@
+# ViT-Base/16  — vanilla Vision Transformer
+data:
+  root: "/path/to/dataset"
+  img_size: 224
+  use_clahe: true
+
+model:
+  name: "vit_base_patch16_224"
+  pretrained: true
+  drop_rate: 0.1
+  drop_path_rate: 0.1
+
+train:
+  epochs: 100
+  batch_size: 16
+  grad_accum_steps: 4           # effective batch = 64
+  amp: true
+  clip_grad_norm: 1.0
+
+optimizer:
+  name: "adamw"
+  lr: 5.0e-5
+  weight_decay: 0.1
+
+scheduler:
+  name: "cosine"
+  warmup_epochs: 20
+  min_lr: 1.0e-6
+
+loss:
+  name: "label_smoothing"
+  label_smoothing: 0.1
+  use_class_weights: true
+
+logging:
+  exp_name: "vit_base_patch16"
