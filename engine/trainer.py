@@ -356,7 +356,15 @@ def run_training(
                 )
 
         # ── Early stopping ────────────────────────────────────────────────────
-        if early_stopper is not None and early_stopper.step(current_metric):
+        if early_stopper is not None:
+            if is_main:
+                stop_training = early_stopper.step(current_metric)
+            if world_size>1:
+                stop_tensor = torch.tensor([int(stop_training)], device=device)
+                torch.distributed.broadcast(stop_tensor, src=0)
+                stop_training = bool(stop_tensor.item())
+            
+        if stop_training:
             if is_main:
                 logger.info(
                     f"Early stopping triggered after {early_stopper.patience} "
