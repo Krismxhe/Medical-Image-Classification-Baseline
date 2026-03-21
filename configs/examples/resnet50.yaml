@@ -12,7 +12,7 @@ model:
 train:
   epochs: 100
   batch_size: 64
-  amp: true
+  amp: false
 
 optimizer:
   name: "adamw"
