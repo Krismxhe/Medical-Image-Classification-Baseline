@@ -275,6 +275,12 @@ def run_training(
     es_active = es_cfg.get("enabled", True)
     monitor   = es_cfg.get("monitor", "auc")
     mode      = es_cfg.get("mode", "max")
+    
+    if mode == "min":
+        best_metric = float("inf")
+    else:
+        best_metric = float("-inf")
+        
     early_stopper = EarlyStopping(
         patience=es_cfg.get("patience", 15),
         mode=mode,
@@ -300,39 +306,35 @@ def run_training(
             amp_enabled=amp_enabled,
         )
 
+        current_metric = val_metrics.get(monitor, val_metrics["acc"])
+
+        # Sync validation metric from rank 0 to all ranks
+        if (
+            world_size > 1
+            and torch.distributed.is_available()
+            and torch.distributed.is_initialized()
+        ):
+            metric_tensor = torch.tensor(
+                float(current_metric),
+                device=device,
+                dtype=torch.float32,
+            )
+            torch.distributed.broadcast(metric_tensor, src=0)
+            current_metric = metric_tensor.item()
+
         # ── LR scheduler step ─────────────────────────────────────────────────
         if scheduler is not None:
             if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                scheduler.step(val_metrics.get(monitor, val_metrics["acc"]))
+                scheduler.step(current_metric)
             else:
                 scheduler.step()
 
-        current_metric = val_metrics.get(monitor, val_metrics["acc"])
-
-        # ── Logging ───────────────────────────────────────────────────────────
-        if is_main:
-            scalar_val = {k: v for k, v in val_metrics.items()
-                          if isinstance(v, (int, float))}
-            if training_logger:
-                training_logger.log_scalars(
-                    {**{f"train/{k}": v for k, v in train_metrics.items()},
-                     **{f"val/{k}":   v for k, v in scalar_val.items()},
-                     "lr": optimizer.param_groups[0]["lr"]},
-                    step=epoch,
-                )
-                training_logger.log_confusion_matrix(
-                    val_metrics["confusion_matrix"], class_names, step=epoch
-                )
-
-            logger.info(
-                f"Epoch {epoch:3d}/{n_epochs}  "
-                f"train_loss={train_metrics['loss']:.4f}  "
-                + format_metrics(val_metrics, prefix="val_")
-                + f"  lr={optimizer.param_groups[0]['lr']:.2e}"
-            )
-
         # ── Save best checkpoint ───────────────────────────────────────────────
-        is_best = current_metric > best_metric
+        if mode == "min":
+            is_best = current_metric < best_metric
+        else:
+            is_best = current_metric > best_metric
+            
         if is_best:
             best_metric = current_metric
 
@@ -356,14 +358,25 @@ def run_training(
                 )
 
         # ── Early stopping ────────────────────────────────────────────────────
+        stop_training = False
+
         if early_stopper is not None:
             if is_main:
                 stop_training = early_stopper.step(current_metric)
-            if world_size>1:
-                stop_tensor = torch.tensor([int(stop_training)], device=device)
+
+            if (
+                world_size > 1
+                and torch.distributed.is_available()
+                and torch.distributed.is_initialized()
+            ):
+                stop_tensor = torch.tensor(
+                    int(stop_training),
+                    device=device,
+                    dtype=torch.int,
+                )
                 torch.distributed.broadcast(stop_tensor, src=0)
                 stop_training = bool(stop_tensor.item())
-            
+
         if stop_training:
             if is_main:
                 logger.info(
@@ -374,3 +387,4 @@ def run_training(
 
     if is_main:
         logger.info(f"Training complete.  Best {monitor}={best_metric:.4f}")
+
