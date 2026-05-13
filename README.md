@@ -17,7 +17,7 @@ Powered by **timm** (700+ pretrained models), **albumentations** (CLAHE + fundus
 | Mixed precision | `torch.cuda.amp` |
 | Multi-GPU | `torchrun` DDP, `DistributedSampler` |
 | Class imbalance | `WeightedRandomSampler` (single-GPU) + inverse-frequency class weights |
-| Metrics | Accuracy, AUC (OvR macro), F1 macro/weighted, Cohen's Kappa (quadratic), Sensitivity/Specificity |
+| Metrics | Accuracy, Balanced Accuracy, AUC (OvR macro), PR-AUC, F1/Precision/Recall (macro+weighted), MCC, Cohen's Kappa, Top-k Accuracy, Sensitivity/Specificity |
 | Logging | TensorBoard + W&B (optional) + CSV |
 | Dataset | Auto-detects split structure; handles missing val/test via stratified split |
 
@@ -129,6 +129,82 @@ Browse all available pretrained models:
 import timm
 print(timm.list_models("*", pretrained=True))
 ```
+
+---
+
+## Metrics & Confusion Matrix
+
+### Computed metrics
+
+| Key | Full name | Notes |
+|---|---|---|
+| `acc` | Accuracy | Fraction of correctly classified samples |
+| `balanced_acc` | Balanced accuracy | Mean per-class recall; robust to class imbalance |
+| `auc` | ROC-AUC (macro OvR) | Area under ROC curve; binary uses positive-class score |
+| `avg_precision_macro` | PR-AUC (macro) | Area under Precision-Recall curve; preferred over AUC on imbalanced data |
+| `f1_macro` | F1 macro | Unweighted mean F1 across classes |
+| `f1_weighted` | F1 weighted | F1 weighted by class support |
+| `precision_macro` | Precision macro | Unweighted mean precision |
+| `precision_weighted` | Precision weighted | Precision weighted by class support |
+| `recall_macro` | Recall macro | Unweighted mean recall (= balanced_acc for uniform weighting) |
+| `recall_weighted` | Recall weighted | Recall weighted by class support |
+| `mcc` | Matthews Correlation Coefficient | Single value in [−1, +1]; handles imbalanced multi-class well |
+| `kappa` | Cohen's Kappa | Agreement above chance (linear weighting) |
+| `kappa_quadratic` | Cohen's Kappa (quadratic) | Penalises large disagreements; common in ordinal grading tasks |
+| `top3_acc` | Top-3 accuracy | Whether true label is in model's top-3 predictions (≥3 classes only) |
+| `sensitivity` | Sensitivity / Recall | TP / (TP + FN); binary classification only |
+| `specificity` | Specificity | TN / (TN + FP); binary classification only |
+
+All scalar metrics are logged every epoch to **TensorBoard**, **W&B**, and **`metrics.csv`**.  
+They are also visible in the training console as a one-line summary per epoch.
+
+### Confusion matrix
+
+The confusion matrix appears in **two places**:
+
+#### 1. TensorBoard heatmap (during training and eval)
+
+Each cell in the main block shows:
+```
+N
+(xx.x%)
+```
+where **N** is the exact sample count and **xx.x%** is the row-normalised percentage (share of that true class predicted as each label).
+
+A shaded **"Total" column** (right) shows the total number of true samples per class.  
+A shaded **"Total" row** (bottom) shows the total number of samples predicted as each class.  
+The bottom-right cell shows the **grand total** sample count.
+
+Navigate to the confusion matrix in TensorBoard under the **Images** tab → `confusion_matrix`.
+
+#### 2. Console / log file (eval.py only)
+
+`eval.py` prints a formatted text table directly to `stdout` and `train.log`:
+
+```
+Confusion Matrix  (rows = True class, cols = Predicted class)
+
+               class_A    class_B    class_C      Total
+--------------------------------------------------------
+       class_A  120(93.8%)   5(3.9%)   3(2.3%)      128
+       class_B    8(7.0%)  95(82.6%)  12(10.4%)     115
+       class_C    2(2.1%)   7(7.2%)  88(90.7%)       97
+--------------------------------------------------------
+         Total      130       107       103          340
+```
+
+Each cell shows **count(row%)** so you can read both the absolute number of samples and the classification rate at a glance.
+
+#### Saving full results to JSON
+
+```bash
+python eval.py --config configs/my_exp.yaml \
+               --checkpoint outputs/my_run/best.pth \
+               --split test \
+               --output_json results.json
+```
+
+The JSON file contains all scalar metrics plus the confusion matrix as a nested list, suitable for downstream analysis or CI comparisons.
 
 ---
 

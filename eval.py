@@ -32,7 +32,7 @@ from data.dataset import MedicalImageDataset, build_dataloader
 from data.transforms import get_transforms
 from engine.evaluator import evaluate
 from models.model_factory import build_model, load_checkpoint
-from utils.metrics import format_metrics
+from utils.metrics import format_confusion_matrix, format_metrics
 from utils.misc import load_config, merge_configs, set_seed
 
 logging.basicConfig(
@@ -103,16 +103,35 @@ def main() -> None:
     )
 
     # ── Report ────────────────────────────────────────────────────────────────
-    logger.info(f"\n{'='*60}")
+    sep = "=" * 64
+    logger.info(f"\n{sep}")
     logger.info(f"  Split      : {args.split}")
     logger.info(f"  Checkpoint : {args.checkpoint}")
     logger.info(f"  N samples  : {len(ds)}")
     logger.info(f"  Classes    : {ds.classes}")
-    logger.info(f"{'='*60}")
-    logger.info(f"  {format_metrics(metrics)}")
-    logger.info(f"{'='*60}")
+    logger.info(sep)
+
+    # Scalar metrics — grouped for readability
+    scalar_groups = [
+        ("Accuracy",   ["acc", "balanced_acc", "top3_acc", "top2_acc"]),
+        ("ROC / PR",   ["auc", "avg_precision_macro"]),
+        ("F1",         ["f1_macro", "f1_weighted"]),
+        ("Precision",  ["precision_macro", "precision_weighted"]),
+        ("Recall",     ["recall_macro", "recall_weighted"]),
+        ("Other",      ["mcc", "kappa", "kappa_quadratic", "sensitivity", "specificity"]),
+    ]
+    for group_name, keys in scalar_groups:
+        row_parts = []
+        for k in keys:
+            v = metrics.get(k)
+            if v is not None and not (isinstance(v, float) and np.isnan(v)):
+                row_parts.append(f"{k}={v:.4f}")
+        if row_parts:
+            logger.info(f"  {group_name:<12}: " + "  ".join(row_parts))
+
+    logger.info(sep)
     logger.info(f"\nClassification Report:\n{metrics['report']}")
-    logger.info(f"\nConfusion Matrix:\n{metrics['confusion_matrix']}")
+    logger.info(format_confusion_matrix(metrics["confusion_matrix"], class_names=ds.classes))
 
     if args.output_json:
         save_metrics = {

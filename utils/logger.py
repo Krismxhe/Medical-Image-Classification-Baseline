@@ -134,20 +134,75 @@ class TrainingLogger:
         self._tb_writer.add_image(tag, img_tensor, global_step=step)
 
     def log_confusion_matrix(self, cm: np.ndarray, class_names, step: int) -> None:
-        """Render confusion matrix as a matplotlib figure and log to TensorBoard."""
+        """Render confusion matrix as a matplotlib figure and log to TensorBoard.
+
+        Each main cell shows the exact sample count and its row-percentage
+        (i.e. share of that true class predicted as each label).
+        An extra "Total" row and column show margin sums so that per-class
+        sample counts are always visible without mental arithmetic.
+        """
         if not self.is_main or self._tb_writer is None:
             return
         try:
             import matplotlib.pyplot as plt
+            import matplotlib.patches as mpatches
             import seaborn as sns
-            fig, ax = plt.subplots(figsize=(max(6, len(class_names)), max(5, len(class_names) - 1)))
+
+            n = cm.shape[0]
+            labels = list(class_names) if class_names else [str(i) for i in range(n)]
+
+            row_sums = cm.sum(axis=1, keepdims=True)   # (n, 1)
+            col_sums = cm.sum(axis=0, keepdims=True)   # (1, n)
+            total    = cm.sum()
+
+            # Extended (n+1) x (n+1) matrix for heatmap colour scaling
+            cm_ext = np.zeros((n + 1, n + 1), dtype=float)
+            cm_ext[:n, :n] = cm
+            cm_ext[:n,  n] = row_sums[:, 0]
+            cm_ext[n,  :n] = col_sums[0, :]
+            cm_ext[n,   n] = total
+
+            # Build annotation strings
+            annot = np.empty((n + 1, n + 1), dtype=object)
+            for i in range(n):
+                for j in range(n):
+                    pct = cm[i, j] / (row_sums[i, 0] + 1e-8) * 100
+                    annot[i, j] = f"{cm[i, j]}\n({pct:.1f}%)"
+                annot[i, n] = str(int(row_sums[i, 0]))   # row total
+            for j in range(n):
+                annot[n, j] = str(int(col_sums[0, j]))   # col total
+            annot[n, n] = str(int(total))
+
+            tick_labels = labels + ["Total"]
+            fig_size = max(7, n + 2)
+            fig, ax = plt.subplots(figsize=(fig_size, fig_size - 1))
+
+            # Draw heatmap; mask the margin row/col so they use a separate colour
+            mask_main   = np.zeros((n + 1, n + 1), dtype=bool)
+            mask_margin = np.ones((n + 1, n + 1),  dtype=bool)
+            mask_main[n,  :] = True   # hide last row from main heatmap
+            mask_main[:,  n] = True   # hide last col from main heatmap
+            mask_margin[:n, :n] = True  # hide main block from margin heatmap
+
             sns.heatmap(
-                cm, annot=True, fmt="d", cmap="Blues",
-                xticklabels=class_names, yticklabels=class_names, ax=ax,
+                cm_ext, mask=mask_main, annot=annot, fmt="", cmap="Blues",
+                xticklabels=tick_labels, yticklabels=tick_labels,
+                ax=ax, cbar=False,
+                linewidths=0.5, linecolor="white",
             )
-            ax.set_xlabel("Predicted")
-            ax.set_ylabel("True")
-            ax.set_title("Confusion Matrix")
+            sns.heatmap(
+                cm_ext, mask=mask_margin, annot=annot, fmt="", cmap="Oranges",
+                xticklabels=tick_labels, yticklabels=tick_labels,
+                ax=ax, cbar=False,
+                linewidths=0.5, linecolor="white",
+            )
+
+            ax.set_xlabel("Predicted", fontsize=11)
+            ax.set_ylabel("True",      fontsize=11)
+            ax.set_title("Confusion Matrix  (count · row%)", fontsize=12)
+            ax.tick_params(axis="x", rotation=45)
+            ax.tick_params(axis="y", rotation=0)
+
             fig.tight_layout()
             self._tb_writer.add_figure("confusion_matrix", fig, global_step=step)
             plt.close(fig)

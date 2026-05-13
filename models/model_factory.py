@@ -57,8 +57,13 @@ def build_model(
     drop_rate      = cfg.get("drop_rate", 0.0)
     drop_path_rate = cfg.get("drop_path_rate", 0.0)
     global_pool    = cfg.get("global_pool", "avg")
+    img_size       = cfg.get("img_size", None)
 
     # Build via timm
+    extra_kwargs: dict = {}
+    if img_size is not None:
+        extra_kwargs["img_size"] = img_size
+
     model = timm.create_model(
         model_name,
         pretrained=pretrained,
@@ -66,6 +71,7 @@ def build_model(
         drop_rate=drop_rate,
         drop_path_rate=drop_path_rate,
         global_pool=global_pool,
+        **extra_kwargs,
     )
 
     # Optionally load a local checkpoint (feature extraction / fine-tuning)

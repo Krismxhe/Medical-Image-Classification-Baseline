@@ -1,0 +1,58 @@
+# Swin Transformer Tiny — 1024 × 1024 high-resolution input
+#
+# Why swinv2_tiny_window8_256 instead of swin_tiny_patch4_window7_224:
+#   window_size=8 → input must be divisible by patch_size × window_size = 4×8 = 32
+#   1024 / 32 = 32  ✓  (window7_224 would require divisibility by 28, 1024/28=36.57 ✗)
+#   SwinV2 uses log-scale continuous position bias → better cross-resolution transfer
+#
+# Pretrained weight compatibility:
+#   All learned parameters (QKV projections, FFN, relative-position-bias tables,
+#   patch embedding, layer norms) depend only on window_size / embed_dim / depth,
+#   NOT on img_size.  The attention mask is a non-persistent buffer recomputed at
+#   init time, so pretrained weights load cleanly into the 1024-resolution model.
+
+data:
+  root: "/path/to/dataset"
+  img_size: 1024
+  use_clahe: true
+
+model:
+  # SwinV2-Tiny with window_size=8:  1024/patch(4)/window(8) = 32 windows  ✓
+  # SwinV2's log-scale continuous position bias generalises better across
+  # resolutions than SwinV1's discrete relative-position table.
+  name: "swinv2_tiny_window8_256"
+  pretrained: true
+  img_size: 1024                          # passed to timm.create_model
+  drop_rate: 0.0
+  drop_path_rate: 0.2
+
+train:
+  epochs: 100
+  batch_size: 4                  # 1024² ≈ 16× memory vs 256²; keep effective batch ≈ 64
+  grad_accum_steps: 16
+  amp: false
+  clip_grad_norm: 5.0
+
+optimizer:
+  name: "adamw"
+  lr: 5.0e-5                     # slightly lower LR for large input
+  weight_decay: 0.05
+
+scheduler:
+  name: "cosine"
+  warmup_epochs: 20
+  min_lr: 1.0e-6
+
+loss:
+  name: "label_smoothing"
+  label_smoothing: 0.1
+  use_class_weights: true
+
+early_stopping:
+  enabled: true
+  patience: 20
+  monitor: "auc"
+  mode: "max"
+
+logging:
+  exp_name: "swin_tiny_1024"
